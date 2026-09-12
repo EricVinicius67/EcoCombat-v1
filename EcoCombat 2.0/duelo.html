@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>EcoCombat - Chefe Supremo</title>
+    <style>
+        :root {
+            --verde-fundo: #E8F5E9;
+            --verde-floresta: #228B22;
+            --branco: #FFFFFF;
+            --cinza: #757575;
+            --laranja: #FF8C00;
+            --azul: #4682B4;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: var(--verde-fundo);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        .header-painel { text-align: center; margin-bottom: 5px; color: var(--verde-floresta); }
+
+        canvas {
+            background-color: #FAFAFA;
+            border: 4px solid var(--verde-floresta);
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            max-width: 100vw;
+            max-height: 65vh;
+        }
+
+        /* 🕹️ CONTROLES MOBILE */
+        #joystick-zone {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 110px;
+            height: 110px;
+            background: rgba(0, 0, 0, 0.15);
+            border: 3px solid rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            display: none;
+            touch-action: none;
+        }
+
+        #joystick-stick {
+            position: absolute;
+            width: 45px;
+            height: 45px;
+            background: var(--verde-floresta);
+            border-radius: 50%;
+            top: 30px;
+            left: 30px;
+        }
+
+        /* 🎛️ PAINEL DE BOTÕES DE HABILIDADE (MOBILE) */
+        #painel-skills-touch {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            display: none;
+            gap: 12px;
+        }
+
+        .btn-skill {
+            width: 65px;
+            height: 65px;
+            color: white;
+            border-radius: 50%;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            cursor: pointer;
+            text-align: center;
+        }
+        #btn-atk1 { background-color: var(--laranja); }
+        #btn-atk2 { background-color: var(--azul); }
+        #btn-atk3 { background-color: var(--verde-floresta); }
+
+        .btn-voltar {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background-color: var(--cinza);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-painel">
+        <h2 style="margin: 0;">O Chefe Supremo: Mega Poluição 🪰</h2>
+        <p style="margin: 2px 0; font-size: 13px; color: #333;">💻 Teclas [1, 2, 3] ou Mouse | 📱 Use os botões na tela</p>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+    <div id="joystick-zone"><div id="joystick-stick"></div></div>
+
+    <!-- Interface Mobile de Skills -->
+    <div id="painel-skills-touch">
+        <div class="btn-skill" id="btn-atk1">H1<br>Tiro</div>
+        <div class="btn-skill" id="btn-atk2">H2<br>Triplo</div>
+        <div class="btn-skill" id="btn-atk3">H3<br>Cura</div>
+    </div>
+
+    <button class="btn-voltar" onclick="window.location.href='index.html'">Voltar ao Lobby</button>
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const nomeJogador = urlParams.get('player') || "Jogador";
+        let idHeroi = urlParams.get('hero') || "plastiquinho";
+
+        if (idHeroi === "Nenhum" || !idHeroi) idHeroi = "plastiquinho";
+
+        const visualHerois = { plastiquinho: "🧴", organica: "🍌", pilha: "🔋" };
+        const emojiHeroi = visualHerois[idHeroi] || "🧴";
+
+        // Projéteis e Poderes
+        const infoPoderes = {
+            plastiquinho: { bala: "🔵", speed: 9, dano: 12, tamanho: 18 },
+            organica: { bala: "🍌", speed: 6, dano: 24, tamanho: 25 },
+            pilha: { bala: "⚡", speed: 13, dano: 9, tamanho: 22 }
+        };
+        const meuPoder = infoPoderes[idHeroi] || infoPoderes["plastiquinho"];
+
+        let tiros = [];
+        let tirosInimigos = []; // Tiros disparados pela mosca na Fase 3
+        let cooldownCura = 0; // Cooldown para a habilidade 3
+
+        const player = {
+            x: 150, y: 250, size: 40, speed: 5.5,
+            emoji: emojiHeroi, targetX: 150, targetY: 250, vida: 100
+        };
+
+        // 🪰 CHEFE SUPREMO GIGANTE
+        const bot = {
+            x: 650, y: 250, size: 85, // Aumentado consideravelmente o tamanho
+            speed: 2.0, emoji: "🪰", vida: 150, vidaMax: 150,
+            fase: 1, corEfeito: "transparent", timerAtaque: 0
+        };
+
+        let jogoAtivo = true;
+        let mensagemFim = "";
+
+        const ehTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        if (ehTouch) {
+            document.getElementById("joystick-zone").style.display = "block";
+            document.getElementById("painel-skills-touch").style.display = "flex";
+        }
+        // --- MOTOR DE DISPAROS DO JOGADOR ---
+        function conjurarHabilidade(tipo) {
+            if (!jogoAtivo) return;
+
+            let anguloBase = Math.atan2(bot.y - player.y, bot.x - player.x);
+
+            if (tipo === 1) { // Tiro Padrão
+                criarBala(anguloBase);
+            } 
+            else if (tipo === 2) { // Tiro Triplo (Leque)
+                criarBala(anguloBase);
+                criarBala(anguloBase - 0.25);
+                criarBala(anguloBase + 0.25);
+            } 
+            else if (tipo === 3) { // Cura (Apenas se sair do cooldown)
+                if (cooldownCura <= 0) {
+                    player.vida = Math.min(100, player.vida + 30);
+                    cooldownCura = 300; // ~5 segundos a 60fps
+                }
+            }
+        }
+
+        function criarBala(angulo) {
+            tiros.push({
+                x: player.x, y: player.y,
+                vx: Math.cos(angulo) * meuPoder.speed, vy: Math.sin(angulo) * meuPoder.speed,
+                emoji: meuPoder.bala, size: meuPoder.tamanho, dano: meuPoder.dano
+            });
+        }
+
+        // 💻 Monitor de Teclas Numéricas (PC)
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "1") conjurarHabilidade(1);
+            if (e.key === "2") conjurarHabilidade(2);
+            if (e.key === "3") conjurarHabilidade(3);
+        });
+
+        // Clique do Mouse atira o básico
+        canvas.addEventListener("mousedown", (e) => { if (!ehTouch) conjurarHabilidade(1); });
+
+        // 📱 Monitor de Toques nos Botões Virtuais (Celular)
+        document.getElementById("btn-atk1").addEventListener("touchstart", (e) => { e.preventDefault(); conjurarHabilidade(1); });
+        document.getElementById("btn-atk2").addEventListener("touchstart", (e) => { e.preventDefault(); conjurarHabilidade(2); });
+        document.getElementById("btn-atk3").addEventListener("touchstart", (e) => { e.preventDefault(); conjurarHabilidade(3); });
+
+        // Captação de movimentações (Mouse e Touchscreen)
+        canvas.addEventListener("mousemove", (e) => {
+            if (ehTouch) return;
+            const rect = canvas.getBoundingClientRect();
+            player.targetX = (e.clientX - rect.left) * (canvas.width / rect.width);
+            player.targetY = (e.clientY - rect.top) * (canvas.height / rect.height);
+        });
+
+        const joystickZone = document.getElementById("joystick-zone");
+        const joystickStick = document.getElementById("joystick-stick");
+        let joyAtivo = false, joyStartX = 0, joyStartY = 0, dx = 0, dy = 0;
+
+        window.addEventListener("touchstart", (e) => {
+            const touch = e.touches[0]; const rect = joystickZone.getBoundingClientRect();
+            if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+                joyAtivo = true; joyStartX = rect.left + rect.width / 2; joyStartY = rect.top + rect.height / 2;
+            }
+        });
+        window.addEventListener("touchmove", (e) => {
+            if (!joyAtivo) return; const touch = e.touches[0];
+            let mX = touch.clientX - joyStartX; let mY = touch.clientY - joyStartY;
+            let dist = Math.sqrt(mX * mX + mY * mY); let rMax = 40;
+            if (dist > rMax) { mX = (mX / dist) * rMax; mY = (mY / dist) * rMax; }
+            joystickStick.style.transform = `translate(${mX}px, ${mY}px)`;
+            dx = mX / rMax; dy = mY / rMax;
+        });
+        window.addEventListener("touchend", () => { joyAtivo = false; dx = 0; dy = 0; joystickStick.style.transform = "translate(0px, 0px)"; });
+        function atualizarJogo() {
+            if (!jogoAtivo) { desenharFimJogo(); return; }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Reduz o cooldown da habilidade de cura
+            if (cooldownCura > 0) cooldownCura--;
+
+            // Movimentação do Jogador
+            if (ehTouch) {
+                player.x += dx * player.speed; player.y += dy * player.speed;
+            } else {
+                player.x += (player.targetX - player.x) * 0.1; player.y += (player.targetY - player.y) * 0.1;
+            }
+            player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+            player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
+
+            // --- EVOLUÇÃO DAS FASES DO CHEFE ---
+            let pctVida = bot.vida / bot.vidaMax;
+            if (pctVida > 0.70) {
+                bot.fase = 1; bot.speed = 2.0; bot.corEfeito = "transparent";
+            } else if (pctVida <= 0.70 && pctVida > 0.35) {
+                bot.fase = 2; bot.speed = 3.2; bot.corEfeito = "rgba(155, 50, 200, 0.2)"; // Aura Roxa de Fumaça
+            } else {
+                bot.fase = 3; bot.speed = 4.2; bot.corEfeito = "rgba(255, 0, 0, 0.2)"; // Aura Vermelha de Fúria
+            }
+
+            // Movimentação da IA do Chefe
+            let diffX = player.x - bot.x; let diffY = player.y - bot.y;
+            let distBot = Math.sqrt(diffX * diffX + diffY * diffY);
+            if (distBot > 5) {
+                bot.x += (diffX / distBot) * bot.speed; bot.y += (diffY / distBot) * bot.speed;
+            }
+
+            // ATAQUES ESPECIAIS DO CHEFE BASEADO NA FASE
+            bot.timerAtaque++;
+            if (bot.fase === 2 && bot.timerAtaque % 50 === 0) {
+                // Fase 2: Deixa fumaça ácida imóvel na arena que machuca ao pisar
+                tirosInimigos.push({ x: bot.x, y: bot.y, vx: 0, vy: 0, emoji: "💨", size: 30, dano: 8, tempo: 150 });
+            } 
+            else if (bot.fase === 3 && bot.timerAtaque % 40 === 0) {
+                // Fase 3: Dispara rajadas ácidas em linha reta na direção do jogador
+                let angAtk = Math.atan2(player.y - bot.y, player.x - bot.x);
+                tirosInimigos.push({
+                    x: bot.x, y: bot.y, vx: Math.cos(angAtk) * 5, vy: Math.sin(angAtk) * 5,
+                    emoji: "🧪", size: 22, dano: 12, tempo: 200
+                });
+            }
+
+            // Dano por contato direto com o corpo gigante da mosca
+            if (distBot < (player.size / 2 + bot.size / 2)) {
+                player.vida -= (bot.fase === 3) ? 0.8 : 0.4; // Dá mais dano na fase 3
+                bot.x -= (diffX / distBot) * 20; bot.y -= (diffY / distBot) * 20; // Empurrão
+            }
+
+            // Processamento dos Tiros do Inimigo (Fumaças e Ácidos)
+            for (let j = tirosInimigos.length - 1; j >= 0; j--) {
+                let te = tirosInimigos[j]; te.x += te.vx; te.y += te.vy; te.tempo--;
+                ctx.font = `${te.size}px Arial`; ctx.fillText(te.emoji, te.x, te.y);
+
+                let pDist = Math.sqrt(te.x - player.x)**2 + (te.y - player.y)**2;
+                if (Math.sqrt((te.x - player.x)**2 + (te.y - player.y)**2) < (te.size/2 + player.size/2)) {
+                    player.vida -= te.dano; tirosInimigos.splice(j, 1); continue;
+                }
+                if (te.tempo <= 0) tirosInimigos.splice(j, 1);
+            }
+
+            // Processamento de Tiros do Jogador contra o Chefe
+            for (let i = tiros.length - 1; i >= 0; i--) {
+                let t = tiros[i]; t.x += t.vx; t.y += t.vy;
+                ctx.font = `${t.size}px Arial`; ctx.fillText(t.emoji, t.x, t.y);
+
+                let tDist = Math.sqrt((t.x - bot.x)**2 + (t.y - bot.y)**2);
+                if (tDist < (t.size / 2 + bot.size / 2)) {
+                    bot.vida -= t.dano; tiros.splice(i, 1); continue;
+                }
+                if (t.x < 0 || t.x > canvas.width || t.y < 0 || t.y > canvas.height) tiros.splice(i, 1);
+            }
+
+            // Desenho do Efeito de Fundo da Fase
+            if (bot.corEfeito !== "transparent") {
+                ctx.fillStyle = bot.corEfeito; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // Desenhar Personagens
+            ctx.font = `${player.size}px Arial`; ctx.fillText(player.emoji, player.x, player.y);
+            ctx.font = `${bot.size}px Arial`; ctx.fillText(bot.emoji, bot.x, bot.y);
+            desenharBarrasVida();
+
+            // Condições de Vitória/Derrota
+            if (player.vida <= 0) { jogoAtivo = false; mensagemFim = "❌ O ecossistema desmoronou! Você perdeu."; }
+            else if (bot.vida <= 0) {
+                jogoAtivo = false; mensagemFim = "🏆 VITÓRIA SOBERANA! Você salvou a Terra!";
+                let b = JSON.parse(localStorage.getItem('usuarios_ecocombat')) || {};
+                if (b[nomeJogador]) { b[nomeJogador].pontuacao += 250; localStorage.setItem('usuarios_ecocombat', JSON.stringify(b)); }
+            }
+            requestAnimationFrame(atualizarJogo);
+        }
+
+        function desenharBarrasVida() {
+            // HP Jogador
+            ctx.fillStyle = "#E0E0E0"; ctx.fillRect(20, 20, 200, 15);
+            ctx.fillStyle = "#228B22"; ctx.fillRect(20, 20, Math.max(0, player.vida) * 2, 15);
+            ctx.font = "bold 13px Arial"; ctx.fillStyle = "#000"; ctx.textAlign = "left";
+            ctx.fillText(`${idHeroi.toUpperCase()} (${Math.round(player.vida)} HP)`, 20, 50);
+            if(cooldownCura > 0) { ctx.fillStyle = "red"; ctx.fillText(`Cura em CD: ${Math.round(cooldownCura/60)}s`, 20, 70); }
+
+            // HP Chefe Supremo
+            ctx.fillStyle = "#E0E0E0"; ctx.fillRect(canvas.width - 220, 20, 200, 15);
+            ctx.fillStyle = "#D32F2F"; ctx.fillRect(canvas.width - 220, 20, (Math.max(0, bot.vida) / bot.vidaMax) * 200, 15);
+            ctx.fillStyle = "#000"; ctx.textAlign = "right";
+            ctx.fillText(`MEGA POLUIÇÃO FASE ${bot.fase}`, canvas.width - 20, 50);
+        }
+
+        function desenharFimJogo() {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.85)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#FFF"; ctx.font = "26px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillText(mensagemFim, canvas.width / 2, canvas.height / 2);
+        }
+
+        atualizarJogo();
+    </script>
+</body>
+</html>
+
+
+
