@@ -1,0 +1,42 @@
+name: Deploy HTML estático para GitHub Pages
+
+on:
+  # Executa o deploy sempre que houver push na branch main
+  push:
+    branches: ["main"]
+  # Permite rodar o workflow manualmente pela aba Actions
+  workflow_dispatch:
+
+# Define as permissões necessárias para publicar no GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Garante que apenas um deploy ocorra por vez
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Empacotar arquivos estáticos
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Envia todos os arquivos da raiz do repositório
+          path: '.'
+
+      - name: Publicar no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
