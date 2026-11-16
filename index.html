@@ -399,5 +399,78 @@
             window.location.href = `${modo}.html?player=${jogadorAtual}&hero=${heroi}`;
         }
     </script>
+    <script>
+        const BIN_ID = "COLE_SEU_BIN_ID_AQUI";
+        const API_KEY = "COLE_SUA_MASTER_KEY_AQUI";
+        const URL_JSON = `https://jsonbin.io{BIN_ID}`;
+      
+        // 1. Função para LER todo o arquivo JSON (usada no Login e no Ranking)
+        async function carregarDadosNuvem() {
+          const resposta = await fetch(URL_JSON + "/latest", {
+            headers: { "X-Master-Key": API_KEY }
+          });
+          const dados = await resposta.json();
+          return dados.record; // Retorna o objeto { jogadores: { ... } }
+        }
+      
+        // 2. Função para SALVAR no arquivo JSON (usada no Cadastro, Vitória e Admin)
+        async function salvarDadosNuvem(novosDados) {
+          await fetch(URL_JSON, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Master-Key": API_KEY
+            },
+            body: JSON.stringify(novosDados)
+          });
+        }
+      
+        // 3. Exemplo: Como cadastrar ou logar no index.html
+        async function entrarOuCadastrar(usuario, senha, isCadastro) {
+          const dados = await carregarDadosNuvem();
+          
+          if (isCadastro) {
+            if (dados.jogadores[usuario]) {
+              alert("Esse usuário já existe!");
+              return;
+            }
+            dados.jogadores[usuario] = { senha: senha, pontos: 0 };
+            await salvarDadosNuvem(dados);
+          } else {
+            if (!dados.jogadores[usuario] || dados.jogadores[usuario].senha !== senha) {
+              alert("Usuário ou senha incorretos!");
+              return;
+            }
+          }
+          
+          // Salva só o nome de quem logou no navegador atual
+          localStorage.setItem("eco_usuario_atual", usuario);
+          alert("Bem-vindo, " + usuario + "!");
+        }
+      
+        // 4. Exemplo: Como somar pontos ao vencer no rpg.html ou duelo.html
+        async function adicionarPontosVitoria(pontosGanhos) {
+          const usuario = localStorage.getItem("eco_usuario_atual");
+          if (!usuario) return;
+      
+          const dados = await carregarDadosNuvem();
+          if (dados.jogadores[usuario]) {
+            dados.jogadores[usuario].pontos += pontosGanhos;
+            await salvarDadosNuvem(dados);
+          }
+        }
+      
+        // 5. Exemplo: Como pegar a lista ordenada para o Quadro de Defensores (Ranking)
+        async function obterRankingOrdenado() {
+          const dados = await carregarDadosNuvem();
+          const lista = Object.entries(dados.jogadores).map(([nome, info]) => ({
+            nome: nome,
+            pontos: info.pontos
+          }));
+          
+          // Ordena do maior para o menor
+          return lista.sort((a, b) => b.pontos - a.pontos);
+        }
+      </script>      
 </body>
 </html>
